@@ -4,33 +4,37 @@ import org.jenkinsci.plugins.workflow.multibranch.WorkflowMultiBranchProject
 import org.jenkinsci.plugins.workflow.job.WorkflowJob
 import com.cloudbees.hudson.plugins.folder.Folder
 
-def directoryName = "your-directory-name" // Change this to your actual directory name
+// === CONFIGURATION ===
+def directoryName = 'terragrunt-patterns' // Change this to your actual directory name
+def listOnly = true                       // Set to false to delete disabled jobs
 
 def jenkins = Jenkins.instance
 def directory = jenkins.getItem(directoryName)
 
 if (directory && directory instanceof Folder) {
-    directory.getItems().each { job ->
-        if (job instanceof WorkflowMultiBranchProject) {
-            println "Multibranch Pipeline: ${job.fullName}"
-            def jobsToDelete = []
+    def disabledJobs = directory.getItems()
+        .findAll { it instanceof WorkflowMultiBranchProject }
+        .collectMany { multibranchPipeline ->
+            multibranchPipeline.getItems().findAll { job -> job instanceof WorkflowJob && job.isDisabled() }
+        }
+    if (disabledJobs.isEmpty()) {
+        println 'No disabled jobs found.'
+    } else {
+        println "Found ${disabledJobs.size()} disabled job(s):"
+        disabledJobs.eachWithIndex { job, index -> println "  ${index + 1}. ${job.fullName}" }
 
-            job.getItems().each { branchJob ->
-                if (branchJob instanceof WorkflowJob && branchJob.isDisabled()) {
-                    println "  Deleting Disabled Job: ${branchJob.fullName}"
-                    jobsToDelete.add(branchJob)
-                }
-            }
-
-
-            jobsToDelete.each { branchJob ->
+        if (!listOnly) {
+            println 'Deleting disabled jobs...'
+            disabledJobs.each { job ->
                 try {
-                    branchJob.delete()
-                    println "  Successfully deleted: ${branchJob.fullName}"
+                    job.delete()
+                    println "  Deleted: ${job.fullName}"
                 } catch (Exception e) {
-                    println "  Failed to delete: ${branchJob.fullName}, Error: ${e.message}"
+                    println "  Failed to delete: ${job.fullName}, Error: ${e.message}"
                 }
             }
+        } else {
+            println 'List-only mode enabled. No jobs were deleted.'
         }
     }
 } else {
